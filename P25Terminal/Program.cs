@@ -1,4 +1,6 @@
-﻿namespace P25Terminal
+﻿using System;
+
+namespace P25Terminal
 {
     internal class Program
     {

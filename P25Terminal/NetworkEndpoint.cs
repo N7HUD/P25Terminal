@@ -180,8 +180,8 @@ namespace P25Terminal
                         }
                     }
 
-                    string msg = Encoding.ASCII.GetString(buf);
-                    Console.WriteLine(msg);
+                    //string msg = Encoding.ASCII.GetString(buf);
+                    //Console.WriteLine(msg);
                 }
 
                 Thread.Sleep(500);
@@ -195,7 +195,7 @@ namespace P25Terminal
             Packet p = new Packet();
             p.SetCallsign("N7HUD");
             p.Id = id;
-            p.Type = 0;
+            p.Type = PacketType.GENERIC_PAYLOAD;
             p.Payload = buf;
             p.PayloadLength = buf.Length;
 
