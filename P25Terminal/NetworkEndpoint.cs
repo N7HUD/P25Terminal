@@ -108,6 +108,8 @@ namespace P25Terminal
         List<UInt32> ackdPackets = new List<UInt32>();
 
         uint id = 0;
+        string address = "192.168.128.12";
+
 
         public void Start()
         {
@@ -233,7 +235,7 @@ namespace P25Terminal
 
             byte[] packetBytes = p.GetBytes();
 
-            client.Send(packetBytes, packetBytes.Length, "192.168.128.12", 25565);
+            client.Send(packetBytes, packetBytes.Length, address, 25565);
 
             SentPacket sp;
             sp.p = p;
@@ -258,7 +260,7 @@ namespace P25Terminal
 
             byte[] packetBytes = p.GetBytes();
 
-            client.Send(packetBytes, packetBytes.Length, "192.168.128.12", 25565);
+            client.Send(packetBytes, packetBytes.Length, address, 25565);
 
             if (!ackdPackets.Contains(ackId))
             {
@@ -270,7 +272,7 @@ namespace P25Terminal
         {
             byte[] packetBytes = p.GetBytes();
 
-            client.Send(packetBytes, packetBytes.Length, "192.168.128.12", 25565);
+            client.Send(packetBytes, packetBytes.Length, address, 25565);
         }
     }
 }
