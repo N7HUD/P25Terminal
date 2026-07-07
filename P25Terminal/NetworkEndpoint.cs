@@ -19,6 +19,7 @@ namespace P25Terminal
         PACKET_ACK = 3020,
         RESEND_REQUEST = 3025,
         GENERIC_PAYLOAD = 4103,
+        ECHO_REQUEST = 4104,
     }
 
     struct SentPacket
@@ -82,7 +83,11 @@ namespace P25Terminal
             Array.Copy(TypeBytes, 0, bytes, 4, 4);
             Array.Copy(CallsignBytes, 0, bytes, 8, 10);
             Array.Copy(PayloadLengthBytes, 0, bytes, 18, 4);
-            Array.Copy(Payload, 0, bytes, 22, PayloadLength);
+
+            if (PayloadLength > 0)
+            {
+                Array.Copy(Payload, 0, bytes, 22, PayloadLength);
+            }
 
             return bytes;
         }
@@ -153,7 +158,9 @@ namespace P25Terminal
                         {
                             case PacketType.PACKET_ACK:
                                 {
+                                    
                                     uint ackId = p.Id;
+                                    Debug.WriteLine($"Received ack for packet {ackId}");
                                     if (sentPackets.ContainsKey(ackId))
                                     {
                                         sentPackets.Remove(ackId);
@@ -163,11 +170,11 @@ namespace P25Terminal
                                 break;
                             case PacketType.GENERIC_PAYLOAD:
                                 {
-
+                                    Debug.WriteLine($"Received generic packet {p.Id}");
                                     if (!ackdPackets.Contains(p.Id))
                                     {
                                         byte[] textBuf = p.Payload;
-                                        string rcvmsg = Encoding.ASCII.GetString(buf);
+                                        string rcvmsg = Encoding.ASCII.GetString(textBuf);
                                         Console.WriteLine(rcvmsg);
                                     }
 
@@ -177,7 +184,32 @@ namespace P25Terminal
 
                                 }
                                 break;
+                            case PacketType.ECHO_REQUEST:
+                                {
+                                    Debug.WriteLine($"Received echo request {p.Id}");
+
+                                    string echo = "ECHO: ";
+                                    if (!ackdPackets.Contains(p.Id))
+                                    {
+                                        byte[] textBuf = p.Payload;
+                                        string rcvmsg = Encoding.ASCII.GetString(textBuf);
+                                        Console.WriteLine(rcvmsg);
+                                        echo += rcvmsg;
+                                    }
+
+                                    uint id = p.Id;
+
+                                    PacketAck(id);
+
+                                    Send(echo);
+
+                                }
+                                break;
                         }
+                    }
+                    else
+                    {
+                        Debug.WriteLine("Received a bad packet");
                     }
 
                     //string msg = Encoding.ASCII.GetString(buf);
@@ -207,6 +239,7 @@ namespace P25Terminal
             sp.p = p;
             sp.timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+            Debug.WriteLine($"Sent packet id: {id}");
             sentPackets.Add(id++, sp);
             Debug.WriteLine("Adding sent packet the list");
 
@@ -215,6 +248,8 @@ namespace P25Terminal
 
         public void PacketAck(uint ackId)
         {
+
+            Debug.WriteLine($"acking packet {ackId}");
             Packet p = new Packet();
             p.SetCallsign("N7HUD");
             p.Id = ackId;
