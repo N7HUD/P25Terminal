@@ -210,13 +210,13 @@ namespace P25Terminal
                                     Debug.WriteLine($"Received echo request {p.Id}");
 
 
-                                    byte[] textBuf = p.Payload;
-                                    string rcvmsg = Encoding.ASCII.GetString(textBuf);
-                                    Debug.WriteLine(rcvmsg);
+                                    
                                     string echo = "ECHO: ";
                                     if (!ackdPackets.Contains(p.Id))
                                     {
-                                        
+                                        byte[] textBuf = p.Payload;
+                                        string rcvmsg = Encoding.ASCII.GetString(textBuf);
+                                        Debug.WriteLine(rcvmsg);
                                         Console.WriteLine(rcvmsg);
                                         echo += rcvmsg;
                                     }
@@ -244,7 +244,7 @@ namespace P25Terminal
             }
         }
 
-        public Packet Send(string msg)
+        public Packet Send(string msg, bool echo = false)
         {
             byte[] buf = Encoding.UTF8.GetBytes(msg);
 
@@ -252,6 +252,12 @@ namespace P25Terminal
             p.SetCallsign("N7HUD");
             p.Id = id;
             p.Type = PacketType.GENERIC_PAYLOAD;
+            
+            if(echo)
+            {
+                p.Type = PacketType.ECHO_REQUEST;
+            }
+            
             p.Payload = buf;
             p.PayloadLength = buf.Length;
 
