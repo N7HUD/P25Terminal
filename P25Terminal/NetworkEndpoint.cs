@@ -26,6 +26,7 @@ namespace P25Terminal
     {
         public Packet p;
         public long timestamp;
+        public int retries;
     }
 
 
@@ -124,13 +125,22 @@ namespace P25Terminal
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
                 List<UInt32> updatePackets = new List<UInt32>();
+                List<UInt32> removePackets = new List<UInt32>();
+
                 foreach (SentPacket sp in sentPackets.Values)
                 {
                     long timeDif = timestamp - sp.timestamp;
 
-                    if (timeDif > 5)
+                    if(sp.retries > 5)
                     {
-                        Debug.WriteLine("Sent packet has not yet been ack'd, resending");
+                        removePackets.Add(sp.p.Id);
+                        Debug.WriteLine("Dropping packet " + sp.p.Id);
+                        continue;
+                    }
+
+                    if (timeDif > 15)
+                    {
+                        Debug.WriteLine($"Packet {sp.p.Id} has not yet been ack'd, resending");
                         ResendPacket(sp.p);
 
                         // Add to list of packets that need timestamps to be updated
@@ -139,12 +149,18 @@ namespace P25Terminal
                 }
 
 
-                // Update timestamps
+                // Update timestamps and retries
                 foreach (UInt32 i in updatePackets)
                 {
                     SentPacket sp = sentPackets[i];
                     sp.timestamp = timestamp;
+                    sp.retries += 1;
                     sentPackets[i] = sp;
+                }
+
+                foreach(UInt32 i in removePackets)
+                {
+                    sentPackets.Remove(i);
                 }
 
 
@@ -156,6 +172,8 @@ namespace P25Terminal
                     Packet p = new Packet(buf);
                     if (p.Type != PacketType.BAD_PACKET)
                     {
+
+                        Debug.WriteLine($"Received packet with ID {p.Id}");
                         switch (p.Type)
                         {
                             case PacketType.PACKET_ACK:
@@ -178,6 +196,7 @@ namespace P25Terminal
                                         byte[] textBuf = p.Payload;
                                         string rcvmsg = Encoding.ASCII.GetString(textBuf);
                                         Console.WriteLine(rcvmsg);
+                                        Debug.WriteLine(rcvmsg);
                                     }
 
                                     uint id = p.Id;
@@ -190,11 +209,14 @@ namespace P25Terminal
                                 {
                                     Debug.WriteLine($"Received echo request {p.Id}");
 
+
+                                    byte[] textBuf = p.Payload;
+                                    string rcvmsg = Encoding.ASCII.GetString(textBuf);
+                                    Debug.WriteLine(rcvmsg);
                                     string echo = "ECHO: ";
                                     if (!ackdPackets.Contains(p.Id))
                                     {
-                                        byte[] textBuf = p.Payload;
-                                        string rcvmsg = Encoding.ASCII.GetString(textBuf);
+                                        
                                         Console.WriteLine(rcvmsg);
                                         echo += rcvmsg;
                                     }
@@ -240,6 +262,7 @@ namespace P25Terminal
             SentPacket sp;
             sp.p = p;
             sp.timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            sp.retries = 0;
 
             Debug.WriteLine($"Sent packet id: {id}");
             sentPackets.Add(id++, sp);
