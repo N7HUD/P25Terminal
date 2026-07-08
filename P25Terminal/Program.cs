@@ -15,7 +15,16 @@ namespace P25Terminal
             {
                 string msg = "";
                 msg = Console.ReadLine();
-                nep.Send(msg);
+
+                if (msg.StartsWith("echo:"))
+                {
+                    string newmsg = msg.Split(":")[1];
+                    nep.Send(newmsg, true);
+                }
+                else
+                {
+                    nep.Send(msg);
+                }
             }
         }
     }
