@@ -144,7 +144,7 @@ namespace P25Terminal
     internal class NetworkEndpoint
     {
         UdpClient client = new UdpClient(25565);
-        Thread listenThread;
+        Thread? listenThread;
 
         Dictionary<UInt32, SentPacket> sentPackets = new Dictionary<UInt32, SentPacket>();
         List<UInt32> sentAcks = new List<UInt32>();
@@ -162,6 +162,12 @@ namespace P25Terminal
         public bool resend = true;
 
         Mutex packetMutex = new Mutex();
+
+        public NetworkEndpoint(string callsign, string address)
+        {
+            this.callsign = callsign;
+            this.address = address;
+        }
 
 
         public void Start()
@@ -497,6 +503,11 @@ namespace P25Terminal
                     Packet partPacket = new Packet(id++, PacketType.FILE_PART, callsign, fp.GetBytes());
                     byte[] partPacketBytes = partPacket.GetBytes();
                     client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
+
+                    while (!recvdAcks.Contains(partPacket.Id))
+                    {
+                        Thread.Sleep(100);
+                    }
                 }
             }
 

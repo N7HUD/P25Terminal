@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 
 namespace P25Terminal
@@ -8,7 +9,49 @@ namespace P25Terminal
         static void Main(string[] args)
         {
             Console.WriteLine("Hello, World!");
-            NetworkEndpoint nep = new NetworkEndpoint();
+
+            string callsign = "";
+            string address = "";
+
+            try
+            {
+                string[] configFile = File.ReadAllLines("settings.cfg");
+                foreach (string config in configFile)
+                {
+                    if (config.Contains('='))
+                    {
+                        string key = config.Split('=')[0];
+                        string value = config.Split("=")[1];
+
+                        switch (key)
+                        {
+                            case "callsign":
+                                {
+                                    callsign = value.Trim();
+                                }
+                                break;
+                            case "address":
+                                {
+                                    address = value.Trim();
+                                }
+                                break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Config file is missing, aborting");
+                return;
+            }
+
+            if(callsign == "" || address == "")
+            {
+                Console.WriteLine("Config is missing, aborting");
+                return;
+            }
+
+            NetworkEndpoint nep = new NetworkEndpoint(callsign, address);
 
             nep.Start();
 
@@ -19,8 +62,9 @@ namespace P25Terminal
 
                 if (msg == "filetest")
                 {
-
-                    NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Documents\lipsum15k.txt");
+                    //Screenshot 2026-07-05 193501_compressed.jpg
+                    //NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Documents\lipsum15k.txt");
+                    NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Pictures\Screenshot 2026-07-05 193501_compressed.jpg");
 
                     FileInfo info = nf.GetInfo();
 
