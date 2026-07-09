@@ -150,8 +150,13 @@ namespace P25Terminal
         List<UInt32> sentAcks = new List<UInt32>();
         List<UInt32> recvdAcks = new List<UInt32>();
 
+
+        bool fileReceiveInProgress = false;
+        FileInfo receivedFileInfo = new FileInfo();
+        Dictionary<uint, FilePart> receivedParts = new Dictionary<uint, FilePart>();
+
         uint id = 0;
-        string address = "192.168.128.12";
+        string address = "192.168.1.96";
         string callsign = "N7HUD";
 
         public bool resend = true;
@@ -292,6 +297,60 @@ namespace P25Terminal
 
                                     
 
+                                }
+                                break;
+                            case PacketType.INIT_FILE_TRANSFER:
+                                {
+                                    fileReceiveInProgress = true;
+                                    Debug.WriteLine("Received file transfer request");
+                                    PacketAck(p.Id);
+                                }
+                                break;
+                            case PacketType.FILE_INFO:
+                                {
+                                    Debug.WriteLine("Received File info");
+                                    if (p.Payload != null)
+                                    {
+                                        receivedFileInfo = FileInfo.CreateFromBytes(p.Payload);
+                                        Debug.WriteLine($"Expecting to receive a file with {receivedFileInfo.fileParts} parts.");
+                                        PacketAck(p.Id);
+                                    }
+                                    else
+                                    {
+                                        Debug.WriteLine("Received an invalid file info");
+                                    }
+                                }
+                                break;
+                            case PacketType.FILE_PART:
+                                {
+                                    Debug.WriteLine("Received file part");
+                                    if(p.Payload != null)
+                                    {
+                                        FilePart fp = FilePart.CreateFromBytes(p.Payload);
+                                        uint partId = fp.partId;
+                                        if(!receivedParts.ContainsKey(partId))
+                                        {
+                                            receivedParts.Add(partId, fp);
+                                        }
+                                    }
+                                }
+                                break;
+                            case PacketType.FILE_SEND_COMPLETE:
+                                {
+                                    if(receivedParts.Count == receivedFileInfo.fileParts)
+                                    {
+                                        Packet p1 = new Packet(id++, PacketType.FILE_RECV_COMPLETE, callsign);
+                                    }
+                                    else
+                                    {
+                                        for(uint i = 0; i < receivedFileInfo.fileParts; ++i)
+                                        {
+                                            if(!receivedParts.ContainsKey(i))
+                                            {
+                                                Debug.WriteLine($"Missing file part {i}, asking to resend");
+                                            }
+                                        }
+                                    }
                                 }
                                 break;
                         }
