@@ -17,6 +17,7 @@ namespace P25Terminal
         CLIENT_CONNECT_ACK = 1020,
         CLIENT_DISCONNECT = 1234,
         PACKET_ACK = 3020,
+        PACKET_NACK = 3021,
         RESEND_REQUEST = 3025,
         GENERIC_PAYLOAD = 4103,
         ECHO_REQUEST = 4104,
@@ -25,6 +26,7 @@ namespace P25Terminal
         FILE_PART = 4107,
         FILE_SEND_COMPLETE = 4108,
         FILE_RECV_COMPLETE = 4109,
+        FILE_PART_QUERY = 4110,
     }
 
     struct SentPacket
@@ -149,6 +151,7 @@ namespace P25Terminal
         Dictionary<UInt32, SentPacket> sentPackets = new Dictionary<UInt32, SentPacket>();
         List<UInt32> sentAcks = new List<UInt32>();
         List<UInt32> recvdAcks = new List<UInt32>();
+        List<UInt32> recvdNacks = new List<UInt32>();
 
 
         bool fileReceiveInProgress = false;
@@ -163,6 +166,8 @@ namespace P25Terminal
         public bool resend = true;
 
         Mutex packetMutex = new Mutex();
+
+        bool DEBUG_DROP_PACKET = true;
 
         public NetworkEndpoint(string callsign, string address, string downloadPath)
         {
@@ -265,6 +270,16 @@ namespace P25Terminal
                                     }    
                                 }
                                 break;
+
+                            case PacketType.PACKET_NACK:
+                                {
+                                    Debug.WriteLine($"Received nack for packet {p.Id}");
+                                    if (!recvdNacks.Contains(p.Id))
+                                    {
+                                        recvdNacks.Add(p.Id);
+                                    }
+                                }
+                                break;
                             case PacketType.GENERIC_PAYLOAD:
                                 {
                                     Debug.WriteLine($"Received generic packet {p.Id}");
@@ -337,6 +352,13 @@ namespace P25Terminal
                                     {
                                         FilePart fp = FilePart.CreateFromBytes(p.Payload);
                                         uint partId = fp.partId;
+
+                                        if(partId == 3 && DEBUG_DROP_PACKET)
+                                        {
+                                            DEBUG_DROP_PACKET = false;
+                                            break;
+                                        }
+
                                         if(!receivedParts.ContainsKey(partId))
                                         {
                                             receivedParts.Add(partId, fp);
@@ -381,6 +403,29 @@ namespace P25Terminal
                                             {
                                                 Debug.WriteLine($"Missing file part {i}, asking to resend");
                                             }
+                                        }
+                                    }
+                                }
+                                break;
+                            case PacketType.FILE_PART_QUERY:
+                                {
+                                    if(p.Payload != null)
+                                    {
+                                        Debug.WriteLine("Remote is requesting query of a file part");
+                                        FilePart fp = FilePart.CreateFromBytes(p.Payload);
+
+                                        uint queryId = fp.partId;
+                                        Debug.WriteLine($"Remote asking about file part {queryId}");
+
+                                        if(receivedParts.ContainsKey(queryId))
+                                        {
+                                            Debug.WriteLine("Sending ACK, we have the part");
+                                            PacketAck(p.Id);
+                                        }
+                                        else
+                                        {
+                                            Debug.WriteLine("Sending NACK, we dont have that part");
+                                            PacketNack(p.Id);
                                         }
                                     }
                                 }
@@ -486,6 +531,26 @@ namespace P25Terminal
             }
         }
 
+        public void PacketNack(uint ackId)
+        {
+
+            Debug.WriteLine($"Nacking packet {ackId}");
+            Packet p = new Packet();
+            p.SetCallsign(callsign);
+            p.Id = ackId;
+            p.Type = PacketType.PACKET_NACK;
+            p.PayloadLength = 0;
+
+            byte[] packetBytes = p.GetBytes();
+
+            client.Send(packetBytes, packetBytes.Length, address, 25565);
+
+            //if (!sentAcks.Contains(ackId))
+            //{
+            //    sentAcks.Add(ackId);
+            //}
+        }
+
         public void ResendPacket(Packet p)
         {
             byte[] packetBytes = p.GetBytes();
@@ -526,13 +591,54 @@ namespace P25Terminal
                 FilePart? fp = file.GetPart(i);
                 if(fp != null)
                 {
+                    int retryCount = 0;
+
                     Packet partPacket = new Packet(id++, PacketType.FILE_PART, callsign, fp.GetBytes());
                     byte[] partPacketBytes = partPacket.GetBytes();
-                    client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
 
-                    while (!recvdAcks.Contains(partPacket.Id))
+                    while (retryCount < 5)
                     {
-                        Thread.Sleep(100);
+                        long sentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                        long timeNow = sentTime;
+                        
+                        client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
+
+                        while (!recvdAcks.Contains(partPacket.Id) && (timeNow - sentTime) < partPacket.GetRetryTime())
+                        {
+                            timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                            Thread.Sleep(100);
+                        }
+                        FilePart queryPart = new FilePart(partPacket.Id, new byte[1]);
+                        Packet retryPacket = new Packet(id++, PacketType.FILE_PART_QUERY, callsign, queryPart.GetBytes());
+
+                        client.Send(retryPacket.GetBytes(), retryPacket.GetBytes().Length, address, 25565);
+
+                        sentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                        while (!recvdAcks.Contains(retryPacket.Id) && !recvdNacks.Contains(retryPacket.Id) && (timeNow - sentTime) < partPacket.GetRetryTime())
+                        {
+                            timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                            Thread.Sleep(100);
+                        }
+
+                        if(recvdAcks.Contains(retryPacket.Id))
+                        {
+                            // An ack means client has the part
+                            break;
+                        }
+
+                        // This is not strictly necessary
+                        if (recvdNacks.Contains(retryPacket.Id))
+                        {
+                            // An ack means client has the part
+                            continue;
+                        }
+
+                    }
+
+                    if(retryCount >= 5)
+                    {
+                        Debug.WriteLine("We seem to have lost connection, aborting");
+                        return;
                     }
                 }
             }
