@@ -34,6 +34,10 @@ namespace P25Terminal
     {
         public Packet() { }
 
+
+        // Packet transmit time is roughly 200 bytes per second. Retry time should be roughtly
+        // (packet size/200) * 3
+        // Empty packets should have a retry time of 15 seconds
         public Packet(byte[] bytes)
         {
             if (bytes.Length < 22)
@@ -60,6 +64,18 @@ namespace P25Terminal
             for (int i = 0; i < 10 && i < callsign.Length; i++)
             {
                 this.Callsign[i] = callsign[i];
+            }
+        }
+
+        public long GetRetryTime()
+        {
+            if(PayloadLength > 0)
+            {
+                return (PayloadLength / 200) * 3;
+            }
+            else
+            {
+                return 15;
             }
         }
 
@@ -106,16 +122,26 @@ namespace P25Terminal
         Thread listenThread;
 
         Dictionary<UInt32, SentPacket> sentPackets = new Dictionary<UInt32, SentPacket>();
-        List<UInt32> ackdPackets = new List<UInt32>();
+        List<UInt32> sentAcks = new List<UInt32>();
+        List<UInt32> recvdAcks = new List<UInt32>();
 
         uint id = 0;
         string address = "192.168.128.12";
+
+        public bool resend = true;
+
+        Mutex packetMutex = new Mutex();
 
 
         public void Start()
         {
             listenThread = new Thread(new ThreadStart(listener));
             listenThread.Start();
+        }
+
+        public bool IsPackedAcked(UInt32 id)
+        {
+            return recvdAcks.Contains(id);
         }
 
         public void listener()
@@ -127,44 +153,50 @@ namespace P25Terminal
                 List<UInt32> updatePackets = new List<UInt32>();
                 List<UInt32> removePackets = new List<UInt32>();
 
-                foreach (SentPacket sp in sentPackets.Values)
+                if (resend)
                 {
-                    long timeDif = timestamp - sp.timestamp;
-
-                    if(sp.retries > 5)
+                    packetMutex.WaitOne();
+                    foreach (SentPacket sp in sentPackets.Values)
                     {
-                        removePackets.Add(sp.p.Id);
-                        Debug.WriteLine("Dropping packet " + sp.p.Id);
-                        continue;
+                        long timeDif = timestamp - sp.timestamp;
+
+                        if (sp.retries > 5)
+                        {
+                            removePackets.Add(sp.p.Id);
+                            Debug.WriteLine("Dropping packet " + sp.p.Id);
+                            continue;
+                        }
+
+                        if (timeDif > 15)
+                        {
+                            Debug.WriteLine($"Packet {sp.p.Id} has not yet been ack'd, resending");
+                            ResendPacket(sp.p);
+
+                            // Add to list of packets that need timestamps to be updated
+                            updatePackets.Add(sp.p.Id);
+                        }
                     }
 
-                    if (timeDif > 15)
+
+                    // Update timestamps and retries
+                    foreach (UInt32 i in updatePackets)
                     {
-                        Debug.WriteLine($"Packet {sp.p.Id} has not yet been ack'd, resending");
-                        ResendPacket(sp.p);
-
-                        // Add to list of packets that need timestamps to be updated
-                        updatePackets.Add(sp.p.Id);
+                        SentPacket sp = sentPackets[i];
+                        sp.timestamp = timestamp;
+                        sp.retries += 1;
+                        sentPackets[i] = sp;
                     }
+
+                    foreach (UInt32 i in removePackets)
+                    {
+                        sentPackets.Remove(i);
+                    }
+
+                    packetMutex.ReleaseMutex();
                 }
 
 
-                // Update timestamps and retries
-                foreach (UInt32 i in updatePackets)
-                {
-                    SentPacket sp = sentPackets[i];
-                    sp.timestamp = timestamp;
-                    sp.retries += 1;
-                    sentPackets[i] = sp;
-                }
-
-                foreach(UInt32 i in removePackets)
-                {
-                    sentPackets.Remove(i);
-                }
-
-
-                if (client.Available > 0)
+                while (client.Available > 0)
                 {
                     IPEndPoint ep = new IPEndPoint(IPAddress.Any, 0);
                     byte[] buf = client.Receive(ref ep);
@@ -178,7 +210,7 @@ namespace P25Terminal
                         {
                             case PacketType.PACKET_ACK:
                                 {
-                                    
+                                    packetMutex.WaitOne();
                                     uint ackId = p.Id;
                                     Debug.WriteLine($"Received ack for packet {ackId}");
                                     if (sentPackets.ContainsKey(ackId))
@@ -186,12 +218,18 @@ namespace P25Terminal
                                         sentPackets.Remove(ackId);
                                         Debug.WriteLine("Packet has been acked");
                                     }
+                                    packetMutex.ReleaseMutex();
+
+                                    if(!recvdAcks.Contains(ackId))
+                                    {
+                                        recvdAcks.Add(ackId);
+                                    }    
                                 }
                                 break;
                             case PacketType.GENERIC_PAYLOAD:
                                 {
                                     Debug.WriteLine($"Received generic packet {p.Id}");
-                                    if (!ackdPackets.Contains(p.Id))
+                                    if (!sentAcks.Contains(p.Id))
                                     {
                                         byte[] textBuf = p.Payload;
                                         string rcvmsg = Encoding.ASCII.GetString(textBuf);
@@ -212,20 +250,21 @@ namespace P25Terminal
 
                                     
                                     string echo = "ECHO: ";
-                                    if (!ackdPackets.Contains(p.Id))
+                                    if (!sentAcks.Contains(p.Id))
                                     {
                                         byte[] textBuf = p.Payload;
                                         string rcvmsg = Encoding.ASCII.GetString(textBuf);
                                         Debug.WriteLine(rcvmsg);
                                         Console.WriteLine(rcvmsg);
                                         echo += rcvmsg;
+                                        Send(echo);
                                     }
 
                                     uint id = p.Id;
 
                                     PacketAck(id);
 
-                                    Send(echo);
+                                    
 
                                 }
                                 break;
@@ -235,13 +274,43 @@ namespace P25Terminal
                     {
                         Debug.WriteLine("Received a bad packet");
                     }
-
-                    //string msg = Encoding.ASCII.GetString(buf);
-                    //Console.WriteLine(msg);
                 }
-
-                Thread.Sleep(500);
             }
+        }
+
+        public Packet Send(byte[] buf, bool echo = false)
+        {
+            Packet p = new Packet();
+            p.SetCallsign("N7HUD");
+            p.Id = id;
+            p.Type = PacketType.GENERIC_PAYLOAD;
+
+            if (echo)
+            {
+                p.Type = PacketType.ECHO_REQUEST;
+            }
+
+            p.Payload = buf;
+            p.PayloadLength = buf.Length;
+
+            byte[] packetBytes = p.GetBytes();
+
+            client.Send(packetBytes, packetBytes.Length, address, 25565);
+
+            SentPacket sp;
+            sp.p = p;
+            sp.timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            sp.retries = 0;
+
+
+            // LOCK HERE
+            packetMutex.WaitOne();
+            Debug.WriteLine($"Sent packet id: {id}");
+            sentPackets.Add(id++, sp);
+            Debug.WriteLine("Adding sent packet the list");
+            packetMutex.ReleaseMutex();
+
+            return p;
         }
 
         public Packet Send(string msg, bool echo = false)
@@ -270,9 +339,12 @@ namespace P25Terminal
             sp.timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             sp.retries = 0;
 
+            // LOCK HERE
+            packetMutex.WaitOne();
             Debug.WriteLine($"Sent packet id: {id}");
             sentPackets.Add(id++, sp);
             Debug.WriteLine("Adding sent packet the list");
+            packetMutex.ReleaseMutex();
 
             return p;
         }
@@ -291,9 +363,9 @@ namespace P25Terminal
 
             client.Send(packetBytes, packetBytes.Length, address, 25565);
 
-            if (!ackdPackets.Contains(ackId))
+            if (!sentAcks.Contains(ackId))
             {
-                ackdPackets.Add(ackId);
+                sentAcks.Add(ackId);
             }
         }
 
