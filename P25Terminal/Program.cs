@@ -12,6 +12,7 @@ namespace P25Terminal
 
             string callsign = "";
             string address = "";
+            string downloadPath = "";
 
             try
             {
@@ -35,6 +36,11 @@ namespace P25Terminal
                                     address = value.Trim();
                                 }
                                 break;
+                            case "download_path":
+                                {
+                                    downloadPath = value.Trim();
+                                }
+                                break;
                         }
                     }
                 }
@@ -51,7 +57,7 @@ namespace P25Terminal
                 return;
             }
 
-            NetworkEndpoint nep = new NetworkEndpoint(callsign, address);
+            NetworkEndpoint nep = new NetworkEndpoint(callsign, address, downloadPath);
 
             nep.Start();
 

@@ -158,15 +158,17 @@ namespace P25Terminal
         uint id = 0;
         string address = "192.168.1.96";
         string callsign = "N7HUD";
+        string downloadPath = "";
 
         public bool resend = true;
 
         Mutex packetMutex = new Mutex();
 
-        public NetworkEndpoint(string callsign, string address)
+        public NetworkEndpoint(string callsign, string address, string downloadPath)
         {
             this.callsign = callsign;
             this.address = address;
+            this.downloadPath = downloadPath;
         }
 
 
@@ -309,6 +311,7 @@ namespace P25Terminal
                                 {
                                     fileReceiveInProgress = true;
                                     Debug.WriteLine("Received file transfer request");
+                                    Console.WriteLine("Remote is initiating a file transfer");
                                     PacketAck(p.Id);
                                 }
                                 break;
@@ -346,6 +349,28 @@ namespace P25Terminal
                                     if(receivedParts.Count == receivedFileInfo.fileParts)
                                     {
                                         Packet p1 = new Packet(id++, PacketType.FILE_RECV_COMPLETE, callsign);
+
+                                        string filePath = downloadPath + "\\" + receivedFileInfo.fileName;
+
+                                        FileStream fs;
+                                        if (File.Exists(filePath))
+                                        {
+                                            fs = File.Open(filePath, FileMode.Truncate);
+                                            Console.WriteLine("File already exists, overwriting");
+                                        }
+                                        else
+                                        {
+                                            fs = File.Create(filePath);
+                                        }
+
+                                        for (uint i = 0; i < receivedFileInfo.fileParts; ++i)
+                                        {
+                                            fs.Write(receivedParts[i].partData);
+                                        }
+
+                                        fs.Flush();
+                                        fs.Close();
+
                                     }
                                     else
                                     {
