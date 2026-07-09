@@ -20,6 +20,11 @@ namespace P25Terminal
         RESEND_REQUEST = 3025,
         GENERIC_PAYLOAD = 4103,
         ECHO_REQUEST = 4104,
+        INIT_FILE_TRANSFER = 4105,
+        FILE_INFO = 4106,
+        FILE_PART = 4107,
+        FILE_SEND_COMPLETE = 4108,
+        FILE_RECV_COMPLETE = 4109,
     }
 
     struct SentPacket
@@ -33,6 +38,26 @@ namespace P25Terminal
     public class Packet
     {
         public Packet() { }
+
+        public Packet(uint id, PacketType type, string callsign)
+        {
+            Id = id;
+            Type = type;
+            SetCallsign(callsign);
+            PayloadLength = 0;
+        }
+
+        public Packet(uint id, PacketType type, string callsign, byte[] payload)
+        {
+            Id = id;
+            Type = type;
+            SetCallsign(callsign);
+            PayloadLength = payload.Length;
+            Payload = new byte[PayloadLength];
+            Array.Copy(payload, Payload, PayloadLength);
+        }
+
+
 
 
         // Packet transmit time is roughly 200 bytes per second. Retry time should be roughtly
@@ -113,7 +138,7 @@ namespace P25Terminal
         public PacketType Type;
         public char[] Callsign = new char[10];
         public int PayloadLength;
-        public byte[] Payload;
+        public byte[]? Payload;
     }
 
     internal class NetworkEndpoint
@@ -127,6 +152,7 @@ namespace P25Terminal
 
         uint id = 0;
         string address = "192.168.128.12";
+        string callsign = "N7HUD";
 
         public bool resend = true;
 
@@ -281,7 +307,7 @@ namespace P25Terminal
         public Packet Send(byte[] buf, bool echo = false)
         {
             Packet p = new Packet();
-            p.SetCallsign("N7HUD");
+            p.SetCallsign(callsign);
             p.Id = id;
             p.Type = PacketType.GENERIC_PAYLOAD;
 
@@ -318,7 +344,7 @@ namespace P25Terminal
             byte[] buf = Encoding.UTF8.GetBytes(msg);
 
             Packet p = new Packet();
-            p.SetCallsign("N7HUD");
+            p.SetCallsign(callsign);
             p.Id = id;
             p.Type = PacketType.GENERIC_PAYLOAD;
             
@@ -354,7 +380,7 @@ namespace P25Terminal
 
             Debug.WriteLine($"acking packet {ackId}");
             Packet p = new Packet();
-            p.SetCallsign("N7HUD");
+            p.SetCallsign(callsign);
             p.Id = ackId;
             p.Type = PacketType.PACKET_ACK;
             p.PayloadLength = 0;
@@ -374,6 +400,86 @@ namespace P25Terminal
             byte[] packetBytes = p.GetBytes();
 
             client.Send(packetBytes, packetBytes.Length, address, 25565);
+        }
+
+
+        public void SendFile(NetworkFile file)
+        {
+            // Send init file transfer to request a connection
+            Packet fileInit = new Packet(id++, PacketType.INIT_FILE_TRANSFER, callsign);
+            byte[] fileInitBytes = fileInit.GetBytes();
+            client.Send(fileInitBytes, fileInitBytes.Length, address, 25565);
+
+            // Wait for ack
+            while (!recvdAcks.Contains(fileInit.Id))
+            {
+                Thread.Sleep(100);
+            }
+
+            // Send file info
+            FileInfo fi = file.GetInfo();
+            Packet fileInfo = new Packet(id++, PacketType.FILE_INFO, callsign, fi.GetBytes());
+            
+            byte[] fileInfoBytes = fileInfo.GetBytes();
+            client.Send(fileInfoBytes, fileInfoBytes.Length, address, 25565);
+
+            // Wait for ack
+            while (!recvdAcks.Contains(fileInfo.Id))
+            {
+                Thread.Sleep(100);
+            }
+
+            // Send all file parts
+            for(int i = 0; i < fi.fileParts; ++i)
+            {
+                FilePart? fp = file.GetPart(i);
+                if(fp != null)
+                {
+                    Packet partPacket = new Packet(id++, PacketType.FILE_PART, callsign, fp.GetBytes());
+                    byte[] partPacketBytes = partPacket.GetBytes();
+                    client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
+                }
+            }
+
+            // Send File send complete
+            Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
+            byte[] completeBytes = complete.GetBytes();
+            client.Send(completeBytes, completeBytes.Length, address, 25565);
+
+            // Wait for file recv complete or empty file part packets
+
+            // Receiving a file part after init sending indicates the
+            // receiver wants that file part again
+        }
+
+        public Packet SendFileInfo(FileInfo fileInfo)
+        {
+            Packet p = new Packet();
+            p.SetCallsign(callsign);
+            p.Id = id;
+            p.Type = PacketType.FILE_INFO;
+
+            p.Payload = fileInfo.GetBytes();
+            p.PayloadLength = p.Payload.Length;
+
+            byte[] packetBytes = p.GetBytes();
+
+            client.Send(packetBytes, packetBytes.Length, address, 25565);
+
+            SentPacket sp;
+            sp.p = p;
+            sp.timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            sp.retries = 0;
+
+
+            // LOCK HERE
+            packetMutex.WaitOne();
+            Debug.WriteLine($"Sent packet id: {id}");
+            sentPackets.Add(id++, sp);
+            Debug.WriteLine("Adding sent packet the list");
+            packetMutex.ReleaseMutex();
+
+            return p;
         }
     }
 }

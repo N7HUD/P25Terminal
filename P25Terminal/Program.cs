@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 
 namespace P25Terminal
 {
@@ -18,41 +19,52 @@ namespace P25Terminal
 
                 if (msg == "filetest")
                 {
-                    nep.resend = false;
-                    FileStream fs = File.Open(@"C:\Users\Radiian\Documents\lipsum15k.txt", FileMode.Open);
-                    long len = fs.Length;
-                    byte[] buf = new byte[len];
 
-                    fs.Read(buf, 0, (int)len);
-                    fs.Close();
-                    int packetSize = 2048;
+                    NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Documents\lipsum15k.txt");
 
-                    long parts = len / packetSize;
-                    for (int i = 0; i < parts; ++i)
-                    {
-                        byte[] tmpbuf = new byte[packetSize];
-                        Array.Copy(buf, i * packetSize, tmpbuf, 0, packetSize);
-                        Packet p = nep.Send(tmpbuf);
-                        while(!nep.IsPackedAcked(p.Id))
-                        {
-                            Thread.Sleep(500);
-                        }
-                    }
-                    long sent = parts * packetSize;
-                    if(sent < len)
-                    {
-                        long dif = len - sent;
-                        byte[] tmpbuf = new byte[dif];
+                    FileInfo info = nf.GetInfo();
 
-                        Array.Copy(buf, sent, tmpbuf, 0, dif);
-                        Packet p = nep.Send(tmpbuf);
-                        while (!nep.IsPackedAcked(p.Id))
-                        {
-                            Thread.Sleep(500);
-                        }
-                    }
+                    Debug.WriteLine($"File info reports {info.fileParts} file parts");
 
-                    Console.WriteLine("File send has completed");
+                    nep.SendFile(nf);
+
+                    Debug.WriteLine("File send complete");
+                    
+                    //nep.resend = false;
+                    //FileStream fs = File.Open(@"C:\Users\Radiian\Documents\lipsum15k.txt", FileMode.Open);
+                    //long len = fs.Length;
+                    //byte[] buf = new byte[len];
+
+                    //fs.Read(buf, 0, (int)len);
+                    //fs.Close();
+                    //int packetSize = 2048;
+
+                    //long parts = len / packetSize;
+                    //for (int i = 0; i < parts; ++i)
+                    //{
+                    //    byte[] tmpbuf = new byte[packetSize];
+                    //    Array.Copy(buf, i * packetSize, tmpbuf, 0, packetSize);
+                    //    Packet p = nep.Send(tmpbuf);
+                    //    while(!nep.IsPackedAcked(p.Id))
+                    //    {
+                    //        Thread.Sleep(500);
+                    //    }
+                    //}
+                    //long sent = parts * packetSize;
+                    //if(sent < len)
+                    //{
+                    //    long dif = len - sent;
+                    //    byte[] tmpbuf = new byte[dif];
+
+                    //    Array.Copy(buf, sent, tmpbuf, 0, dif);
+                    //    Packet p = nep.Send(tmpbuf);
+                    //    while (!nep.IsPackedAcked(p.Id))
+                    //    {
+                    //        Thread.Sleep(500);
+                    //    }
+                    //}
+
+                    //Console.WriteLine("File send has completed");
 
 
                 }
