@@ -341,6 +341,7 @@ namespace P25Terminal
                                         {
                                             receivedParts.Add(partId, fp);
                                         }
+                                        PacketAck(p.Id);
                                     }
                                 }
                                 break;
