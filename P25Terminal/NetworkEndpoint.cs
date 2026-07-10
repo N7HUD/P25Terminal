@@ -600,17 +600,30 @@ namespace P25Terminal
                     {
                         long sentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                         long timeNow = sentTime;
-                        
+
+                        Debug.WriteLine($"Sending file part  {fp.partId}");
                         client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
 
+                        Debug.WriteLine($"Waiting for ack for part {fp.partId}");
                         while (!recvdAcks.Contains(partPacket.Id) && (timeNow - sentTime) < partPacket.GetRetryTime())
                         {
                             timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                             Thread.Sleep(100);
                         }
-                        FilePart queryPart = new FilePart(partPacket.Id, new byte[1]);
+
+                        if(recvdAcks.Contains(partPacket.Id))
+                        {
+                            Debug.WriteLine($"Ack received for part {fp.partId}");
+                            break;
+                        }
+
+                        Debug.WriteLine($"Missing ack for part {fp.partId}");
+
+                        FilePart queryPart = new FilePart(fp.partId, new byte[1]);
                         Packet retryPacket = new Packet(id++, PacketType.FILE_PART_QUERY, callsign, queryPart.GetBytes());
 
+
+                        Debug.WriteLine($"Sending part query for part {fp.partId}");
                         client.Send(retryPacket.GetBytes(), retryPacket.GetBytes().Length, address, 25565);
 
                         sentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -620,18 +633,27 @@ namespace P25Terminal
                             Thread.Sleep(100);
                         }
 
+                        
+
                         if(recvdAcks.Contains(retryPacket.Id))
                         {
                             // An ack means client has the part
+                            Debug.WriteLine($"Ack received for query on file part {fp.partId}, client has part, moving on");
                             break;
                         }
+
+                        ++retryCount;
 
                         // This is not strictly necessary
                         if (recvdNacks.Contains(retryPacket.Id))
                         {
                             // An ack means client has the part
+                            Debug.WriteLine($"Nack received for query on file part {fp.partId}, retrying");
+                            
                             continue;
                         }
+
+                        Debug.WriteLine($"Missing nack and ack for query on file part {fp.partId}, retrying");
 
                     }
 
