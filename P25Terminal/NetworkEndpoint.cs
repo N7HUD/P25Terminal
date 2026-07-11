@@ -585,8 +585,49 @@ namespace P25Terminal
                 Thread.Sleep(100);
             }
 
-            // Send all file parts
+            List<FilePart> fileParts = new List<FilePart>();
             for(int i = 0; i < fi.fileParts; ++i)
+            {
+                FilePart? fp = file.GetPart(i);
+
+                if(fp != null)
+                {
+                    fileParts.Add(fp);
+                }
+            }
+
+            List<uint> packetIds = new List<uint>();
+
+            long listenTime = 0;
+            long startTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long nowTime = startTime;
+            // Send all file parts at once
+            foreach (FilePart p in fileParts)
+            {
+                Packet partPacket = new Packet(id++, PacketType.FILE_PART, callsign, p.GetBytes());
+                byte[] partPacketBytes = partPacket.GetBytes();
+                
+                packetIds.Add(partPacket.Id);
+                listenTime += 10;
+
+                client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
+            }
+
+            // Hopefully wait for all packets to be sent
+            while((nowTime-startTime) < listenTime)
+            {
+                Thread.Sleep(100);
+            }
+
+            // Send File send complete
+            Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
+            byte[] completeBytes = complete.GetBytes();
+            client.Send(completeBytes, completeBytes.Length, address, 25565);
+
+
+            /*
+            // Send all file parts
+            for (int i = 0; i < fi.fileParts; ++i)
             {
                 FilePart? fp = file.GetPart(i);
                 if(fp != null)
@@ -664,11 +705,12 @@ namespace P25Terminal
                     }
                 }
             }
+            */
 
-            // Send File send complete
-            Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
-            byte[] completeBytes = complete.GetBytes();
-            client.Send(completeBytes, completeBytes.Length, address, 25565);
+            //// Send File send complete
+            //Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
+            //byte[] completeBytes = complete.GetBytes();
+            //client.Send(completeBytes, completeBytes.Length, address, 25565);
 
             // Wait for file recv complete or empty file part packets
 
