@@ -167,4 +167,59 @@ namespace P25Terminal
             }
         }
     }
+
+    internal class FileResendRequest
+    {
+        public UInt32 requestCount = 0;
+        public UInt32[] requestParts;
+
+        private FileResendRequest() { }
+
+        public FileResendRequest(List<uint> requestPartsList)
+        {
+            requestCount = (uint)requestPartsList.Count;
+            requestParts = new uint[requestCount];
+
+            int idx = 0;
+            foreach (uint partId in requestPartsList)
+            {
+                requestParts[idx++] = partId;
+            }
+        }
+
+        public byte[] GetBytes()
+        {
+            byte[] bytes = new byte[(requestCount * 4) + 4];
+            byte[] countBytes = BitConverter.GetBytes(requestCount);
+
+            Array.Copy(countBytes, 0, bytes, 0, 4);
+
+            for(uint i = 0; i < requestCount; ++i)
+            {
+                byte[] b = BitConverter.GetBytes(requestParts[i]);
+                Array.Copy(b, 0, bytes, i * 4 + 4, 4);
+            }
+
+            return bytes;
+        }
+
+        public static FileResendRequest? CreateFromBytes(byte[] bytes)
+        {
+            FileResendRequest? out_val = null;
+            if(bytes.Length > 4)
+            {
+                out_val = new FileResendRequest();
+                out_val.requestCount = BitConverter.ToUInt32(bytes, 0);
+
+                out_val.requestParts = new UInt32[out_val.requestCount];
+
+                for(int i = 0; i < out_val.requestCount; ++i)
+                {
+                    out_val.requestParts[i] = BitConverter.ToUInt32(bytes, (i * 4) + 4);
+                }
+            }
+
+            return out_val;
+        }
+    }
 }
