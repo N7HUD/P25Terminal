@@ -13,6 +13,8 @@ namespace P25Terminal
             string callsign = "";
             string address = "";
             string downloadPath = "";
+            string filePath = "";
+            int burstTimeout = 5; //35 per 5 bursts seems to be stable, can maybe reduce by up to 2 seconds
 
             try
             {
@@ -41,6 +43,20 @@ namespace P25Terminal
                                     downloadPath = value.Trim();
                                 }
                                 break;
+                            case "file_path":
+                                {
+                                    filePath = value.Trim();
+                                }
+                                break;
+                            case "burst_timeout":
+                                {
+                                    try
+                                    {
+                                        burstTimeout = int.Parse(value.Trim());
+                                    }
+                                    catch (Exception e) { }
+                                }
+                                break;
                         }
                     }
                 }
@@ -58,6 +74,7 @@ namespace P25Terminal
             }
 
             NetworkEndpoint nep = new NetworkEndpoint(callsign, address, downloadPath);
+            nep.burstTimeout = burstTimeout;
 
             nep.Start();
 
@@ -70,7 +87,7 @@ namespace P25Terminal
                 {
                     //Screenshot 2026-07-05 193501_compressed.jpg
                     //NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Documents\lipsum15k.txt");
-                    NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Pictures\Screenshot 2026-07-05 193501_compressed.jpg");
+                    NetworkFile nf = new NetworkFile(filePath);
 
                     FileInfo info = nf.GetInfo();
 

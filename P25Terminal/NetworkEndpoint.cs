@@ -173,6 +173,8 @@ namespace P25Terminal
         long estimatedFileDownloadTime = 0;
         long lastFilePartTime = 0;
 
+        public int burstTimeout = 5;
+
         NetworkFile? sendingFile = null;
 
 
@@ -379,6 +381,8 @@ namespace P25Terminal
                                         FilePart fp = FilePart.CreateFromBytes(p.Payload);
                                         uint partId = fp.partId;
 
+                                        Console.WriteLine($"Received file part {partId}");
+
                                         if(!receivedParts.ContainsKey(partId))
                                         {
                                             receivedParts.Add(partId, fp);
@@ -389,7 +393,11 @@ namespace P25Terminal
                                 break;
                             case PacketType.FILE_SEND_COMPLETE:
                                 {
-                                    if(receivedParts.Count == receivedFileInfo.fileParts)
+
+                                    fileThread = new Thread(new ThreadStart(FileManager));
+                                    fileThread.Start();
+
+                                    if (receivedParts.Count == receivedFileInfo.fileParts)
                                     {
                                         
 
@@ -624,12 +632,19 @@ namespace P25Terminal
                 }
             }
 
+            Console.WriteLine($"Sending {fileParts.Count} file parts");
+
             List<uint> packetIds = new List<uint>();
 
             long listenTime = 0;
             long startTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             long nowTime = startTime;
             // Send all file parts at once
+            // Pausing every few parts to allow receiver to process
+
+            int burstCount = 5;
+
+            int sendCount = 0;
             foreach (FilePart p in fileParts)
             {
                 Packet partPacket = new Packet(id++, PacketType.FILE_PART, callsign, p.GetBytes());
@@ -638,14 +653,29 @@ namespace P25Terminal
                 packetIds.Add(partPacket.Id);
                 listenTime += 10;
 
+                Console.WriteLine($"Sending file part {p.partId}");
                 client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
+                ++sendCount;
+                if(sendCount > burstCount)
+                {
+                    sendCount = 0;
+                    Thread.Sleep(1000 * burstTimeout);
+                }
+
+            }
+
+            if(sendCount > 0)
+            {
+                int estimatedWaitPerPacket = burstTimeout / burstCount;
+                Thread.Sleep(sendCount * 1000 * estimatedWaitPerPacket);
             }
 
             // Hopefully wait for all packets to be sent
-            while((nowTime-startTime) < listenTime)
-            {
-                Thread.Sleep(100);
-            }
+            //while((nowTime-startTime) < listenTime)
+            //{
+            //    Thread.Sleep(100);
+            //    nowTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            //}
 
             // Send File send complete
             Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
