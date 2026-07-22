@@ -353,7 +353,11 @@ namespace P25Terminal
                                         receivedFileInfo = FileInfo.CreateFromBytes(p.Payload);
 
                                         // This will eventually be set based on heuristics, for now we're guessing (:
-                                        estimatedFileDownloadTime = receivedFileInfo.fileParts * 6;
+                                        //estimatedFileDownloadTime = receivedFileInfo.fileParts * 6;
+
+                                        // More intelligent waiting based on observed heuristics on send time
+                                        int chunks = receivedFileInfo.fileParts / receivedFileInfo.chunkSize;
+                                        estimatedFileDownloadTime = chunks * receivedFileInfo.chunkWait;
 
                                         fileThread = new Thread(new ThreadStart(FileManager));
                                         fileThread.Start();
@@ -394,8 +398,8 @@ namespace P25Terminal
                             case PacketType.FILE_SEND_COMPLETE:
                                 {
 
-                                    fileThread = new Thread(new ThreadStart(FileManager));
-                                    fileThread.Start();
+                                    //fileThread = new Thread(new ThreadStart(FileManager));
+                                    //fileThread.Start();
 
                                     if (receivedParts.Count == receivedFileInfo.fileParts)
                                     {
@@ -412,6 +416,11 @@ namespace P25Terminal
                                             }
                                         }
                                     }
+                                }
+                                break;
+                            case PacketType.FILE_RECV_COMPLETE:
+                                {
+                                    Console.WriteLine("Received file confirmation from remote client");
                                 }
                                 break;
                             case PacketType.FILE_PART_QUERY:
@@ -610,10 +619,12 @@ namespace P25Terminal
 
             // Send file info
             FileInfo fi = file.GetInfo();
-            Packet fileInfo = new Packet(id++, PacketType.FILE_INFO, callsign, fi.GetBytes());
+            Packet fileInfo = SendFileInfo(fi);
+
+            //Packet fileInfo = new Packet(id++, PacketType.FILE_INFO, callsign, fi.GetBytes());
             
-            byte[] fileInfoBytes = fileInfo.GetBytes();
-            client.Send(fileInfoBytes, fileInfoBytes.Length, address, 25565);
+            //byte[] fileInfoBytes = fileInfo.GetBytes();
+            //client.Send(fileInfoBytes, fileInfoBytes.Length, address, 25565);
 
             // Wait for ack
             while (!recvdAcks.Contains(fileInfo.Id))
@@ -664,120 +675,32 @@ namespace P25Terminal
 
             }
 
+            // For sets of packets such that packetCount % 5 != 0, we still need to wait a bit
+            // before sending the file complete packet. Determine the estimated wait per packet
+            // left over and wait that time.
             if(sendCount > 0)
             {
                 int estimatedWaitPerPacket = burstTimeout / burstCount;
                 Thread.Sleep(sendCount * 1000 * estimatedWaitPerPacket);
             }
 
-            // Hopefully wait for all packets to be sent
-            //while((nowTime-startTime) < listenTime)
-            //{
-            //    Thread.Sleep(100);
-            //    nowTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            //}
-
             // Send File send complete
             Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
             byte[] completeBytes = complete.GetBytes();
             client.Send(completeBytes, completeBytes.Length, address, 25565);
 
+            Console.WriteLine("File send complete");
 
-            /*
-            // Send all file parts
-            for (int i = 0; i < fi.fileParts; ++i)
-            {
-                FilePart? fp = file.GetPart(i);
-                if(fp != null)
-                {
-                    int retryCount = 0;
-
-                    Packet partPacket = new Packet(id++, PacketType.FILE_PART, callsign, fp.GetBytes());
-                    byte[] partPacketBytes = partPacket.GetBytes();
-
-                    while (retryCount < 5)
-                    {
-                        long sentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                        long timeNow = sentTime;
-
-                        Debug.WriteLine($"Sending file part  {fp.partId}");
-                        client.Send(partPacketBytes, partPacketBytes.Length, address, 25565);
-
-                        Debug.WriteLine($"Waiting for ack for part {fp.partId}");
-                        while (!recvdAcks.Contains(partPacket.Id) && (timeNow - sentTime) < partPacket.GetRetryTime())
-                        {
-                            timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                            Thread.Sleep(100);
-                        }
-
-                        if(recvdAcks.Contains(partPacket.Id))
-                        {
-                            Debug.WriteLine($"Ack received for part {fp.partId}");
-                            break;
-                        }
-
-                        Debug.WriteLine($"Missing ack for part {fp.partId}");
-
-                        FilePart queryPart = new FilePart(fp.partId, new byte[1]);
-                        Packet retryPacket = new Packet(id++, PacketType.FILE_PART_QUERY, callsign, queryPart.GetBytes());
-
-
-                        Debug.WriteLine($"Sending part query for part {fp.partId}");
-                        client.Send(retryPacket.GetBytes(), retryPacket.GetBytes().Length, address, 25565);
-
-                        sentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                        while (!recvdAcks.Contains(retryPacket.Id) && !recvdNacks.Contains(retryPacket.Id) && (timeNow - sentTime) < partPacket.GetRetryTime())
-                        {
-                            timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                            Thread.Sleep(100);
-                        }
-
-                        
-
-                        if(recvdAcks.Contains(retryPacket.Id))
-                        {
-                            // An ack means client has the part
-                            Debug.WriteLine($"Ack received for query on file part {fp.partId}, client has part, moving on");
-                            break;
-                        }
-
-                        ++retryCount;
-
-                        // This is not strictly necessary
-                        if (recvdNacks.Contains(retryPacket.Id))
-                        {
-                            // An ack means client has the part
-                            Debug.WriteLine($"Nack received for query on file part {fp.partId}, retrying");
-                            
-                            continue;
-                        }
-
-                        Debug.WriteLine($"Missing nack and ack for query on file part {fp.partId}, retrying");
-
-                    }
-
-                    if(retryCount >= 5)
-                    {
-                        Debug.WriteLine("We seem to have lost connection, aborting");
-                        return;
-                    }
-                }
-            }
-            */
-
-            //// Send File send complete
-            //Packet complete = new Packet(id++, PacketType.FILE_SEND_COMPLETE, callsign);
-            //byte[] completeBytes = complete.GetBytes();
-            //client.Send(completeBytes, completeBytes.Length, address, 25565);
-
-            // Wait for file recv complete or empty file part packets
-
-            // Receiving a file part after init sending indicates the
-            // receiver wants that file part again
+            // Client will then either send a receive complete packet or request packets to be resent.
+            // We will handle those in the main packet loop
         }
 
         public Packet SendFileInfo(FileInfo fileInfo)
         {
+
+            fileInfo.chunkSize = 5;// Fix this later
+            fileInfo.chunkWait = burstTimeout;
+
             Packet p = new Packet();
             p.SetCallsign(callsign);
             p.Id = id;
@@ -796,21 +719,18 @@ namespace P25Terminal
             sp.retries = 0;
 
 
-            // LOCK HERE
-            packetMutex.WaitOne();
-            Debug.WriteLine($"Sent packet id: {id}");
-            sentPackets.Add(id++, sp);
-            Debug.WriteLine("Adding sent packet the list");
-            packetMutex.ReleaseMutex();
+            //// LOCK HERE
+            //packetMutex.WaitOne();
+            //Debug.WriteLine($"Sent packet id: {id}");
+            //sentPackets.Add(id++, sp);
+            //Debug.WriteLine("Adding sent packet the list");
+            //packetMutex.ReleaseMutex();
 
             return p;
         }
     
         private void FileManager()
         {
-            long startTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            long timeNow = startTime;
-
             long waitTime = estimatedFileDownloadTime;
 
             int retryCounter = 0;
@@ -819,15 +739,22 @@ namespace P25Terminal
             {
                 if (receivedFileInfo != null)
                 {
+                    long startTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                    long timeNow = startTime;
+
+
                     // Wait for all parts received or estimated download time to elapse
-                    while ((receivedParts.Count < receivedFileInfo.fileParts) && (timeNow - startTime < waitTime))
+                    while ((receivedParts.Count < receivedFileInfo.fileParts) && ((timeNow - startTime) < waitTime))
                     {
                         timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                        Thread.Sleep(100);
                     }
 
                     if (receivedParts.Count == receivedFileInfo.fileParts)
                     {
                         // all parts received, assemble the file
+
+                        // Send file receive complete
                         Packet p1 = new Packet(id++, PacketType.FILE_RECV_COMPLETE, callsign);
                         byte[] recvCompleteBytes = p1.GetBytes();
                         client.Send(recvCompleteBytes, recvCompleteBytes.Length, address, 25565);
@@ -854,6 +781,8 @@ namespace P25Terminal
                         fs.Close();
 
                         fileReceiveInProgress = false;
+                        Console.WriteLine("File receive complete");
+                        
                     }
                     else
                     {
@@ -863,50 +792,37 @@ namespace P25Terminal
 
                         int missingParts = receivedFileInfo.fileParts - receivedParts.Count;
 
-
-                        // We might still be receiving parts
-                        if (timeSinceLastPart < 10)
+                        if(retryCounter > 5)
                         {
-                            // Set the wait time to a time proportional to the number of missing parts and restart the main loop
-                            
-                            waitTime = missingParts * 8;
-                            continue;
+                            Console.WriteLine("Failed to retain all file parts after 5 rounds of retry, aborting");
+                            return;
                         }
-                        else
+
+                        // Figure out which parts are missing and send resend requests
+                        List<uint> missingPartsList = new List<uint>();
+                        for(uint i = 0; i < receivedFileInfo.fileParts; ++i)
                         {
-                            if(retryCounter > 5)
+                            if(!receivedParts.ContainsKey(i))
                             {
-                                Console.WriteLine("Failed to retain all file parts after 5 rounds of retry, aborting");
-                                return;
+                                missingPartsList.Add(i);
                             }
-
-                            // Been a while since our last part was received so initiate the resend request
-
-                            // Figure out which parts are missing and send resend requests
-                            List<uint> missingPartsList = new List<uint>();
-                            for(uint i = 0; i < receivedFileInfo.fileParts; ++i)
-                            {
-                                if(!receivedParts.ContainsKey(i))
-                                {
-                                    missingPartsList.Add(i);
-                                }
-                            }
-
-                            FileResendRequest resendRequest = new FileResendRequest(missingPartsList);
-                            byte[] resendRequestBytes = resendRequest.GetBytes();
-
-                            Packet p = new Packet(id++, PacketType.RESEND_REQUEST, callsign, resendRequestBytes);
-                            byte[] pBytes = p.GetBytes();
-
-                            client.Send(pBytes, pBytes.Length, address, 25565);
-
-
-                            // Reset the wait time and continue
-                            waitTime = missingParts * 8;
-                            ++retryCounter;
-
-                            continue;
                         }
+
+                        FileResendRequest resendRequest = new FileResendRequest(missingPartsList);
+                        byte[] resendRequestBytes = resendRequest.GetBytes();
+
+                        Packet p = new Packet(id++, PacketType.RESEND_REQUEST, callsign, resendRequestBytes);
+                        byte[] pBytes = p.GetBytes();
+
+                        client.Send(pBytes, pBytes.Length, address, 25565);
+
+
+                        // Reset the wait time and continue
+                        waitTime = missingParts * 8;
+                        ++retryCounter;
+
+                        continue;
+                        
                     }
                 }
             }

@@ -83,63 +83,101 @@ namespace P25Terminal
                 string msg = "";
                 msg = Console.ReadLine();
 
-                if (msg == "filetest")
+                if (msg != null && msg.Length > 0)
                 {
-                    //Screenshot 2026-07-05 193501_compressed.jpg
-                    //NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Documents\lipsum15k.txt");
-                    NetworkFile nf = new NetworkFile(filePath);
+                    if (msg[0] == '!')
+                    {
+                        string[] cmd_args = msg.Split(' ');
+                        string cmd = cmd_args[0];
+                        string cmd_params = "";
 
-                    FileInfo info = nf.GetInfo();
+                        for(int i = 1; i < cmd_args.Length; i++)
+                        {
+                            cmd_params += cmd_args[i] + " ";
+                        }
 
-                    Debug.WriteLine($"File info reports {info.fileParts} file parts");
+                        cmd_params = cmd_params.Trim();
+                        cmd = cmd.Remove(0, 1);
 
-                    nep.SendFile(nf);
+                        switch(cmd)
+                        {
+                            case "filesend":
+                                {
+                                    NetworkFile nf = new NetworkFile(cmd_params);
+                                    FileInfo info = nf.GetInfo();
+                                    nep.SendFile(nf);
+                                }
+                                break;
+                            case "echo":
+                                {
+                                    nep.Send(cmd_params, true);
+                                }
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        nep.Send(msg);
+                    }
+                }
 
-                    Debug.WriteLine("File send complete");
+                //if (msg == "filetest")
+                //{
+                //    //Screenshot 2026-07-05 193501_compressed.jpg
+                //    //NetworkFile nf = new NetworkFile(@"C:\Users\Radiian\Documents\lipsum15k.txt");
+                //    NetworkFile nf = new NetworkFile(filePath);
+
+                //    FileInfo info = nf.GetInfo();
+
+                //    Debug.WriteLine($"File info reports {info.fileParts} file parts");
+
+                //    nep.SendFile(nf);
+
+                //    Debug.WriteLine("File send complete");
                     
-                    //nep.resend = false;
-                    //FileStream fs = File.Open(@"C:\Users\Radiian\Documents\lipsum15k.txt", FileMode.Open);
-                    //long len = fs.Length;
-                    //byte[] buf = new byte[len];
+                //    //nep.resend = false;
+                //    //FileStream fs = File.Open(@"C:\Users\Radiian\Documents\lipsum15k.txt", FileMode.Open);
+                //    //long len = fs.Length;
+                //    //byte[] buf = new byte[len];
 
-                    //fs.Read(buf, 0, (int)len);
-                    //fs.Close();
-                    //int packetSize = 2048;
+                //    //fs.Read(buf, 0, (int)len);
+                //    //fs.Close();
+                //    //int packetSize = 2048;
 
-                    //long parts = len / packetSize;
-                    //for (int i = 0; i < parts; ++i)
-                    //{
-                    //    byte[] tmpbuf = new byte[packetSize];
-                    //    Array.Copy(buf, i * packetSize, tmpbuf, 0, packetSize);
-                    //    Packet p = nep.Send(tmpbuf);
-                    //    while(!nep.IsPackedAcked(p.Id))
-                    //    {
-                    //        Thread.Sleep(500);
-                    //    }
-                    //}
-                    //long sent = parts * packetSize;
-                    //if(sent < len)
-                    //{
-                    //    long dif = len - sent;
-                    //    byte[] tmpbuf = new byte[dif];
+                //    //long parts = len / packetSize;
+                //    //for (int i = 0; i < parts; ++i)
+                //    //{
+                //    //    byte[] tmpbuf = new byte[packetSize];
+                //    //    Array.Copy(buf, i * packetSize, tmpbuf, 0, packetSize);
+                //    //    Packet p = nep.Send(tmpbuf);
+                //    //    while(!nep.IsPackedAcked(p.Id))
+                //    //    {
+                //    //        Thread.Sleep(500);
+                //    //    }
+                //    //}
+                //    //long sent = parts * packetSize;
+                //    //if(sent < len)
+                //    //{
+                //    //    long dif = len - sent;
+                //    //    byte[] tmpbuf = new byte[dif];
 
-                    //    Array.Copy(buf, sent, tmpbuf, 0, dif);
-                    //    Packet p = nep.Send(tmpbuf);
-                    //    while (!nep.IsPackedAcked(p.Id))
-                    //    {
-                    //        Thread.Sleep(500);
-                    //    }
-                    //}
+                //    //    Array.Copy(buf, sent, tmpbuf, 0, dif);
+                //    //    Packet p = nep.Send(tmpbuf);
+                //    //    while (!nep.IsPackedAcked(p.Id))
+                //    //    {
+                //    //        Thread.Sleep(500);
+                //    //    }
+                //    //}
 
-                    //Console.WriteLine("File send has completed");
+                //    //Console.WriteLine("File send has completed");
 
 
-                }
-                else
-                {
-                    nep.resend = true;
-                    nep.Send(msg);
-                }
+                //}
+                //else
+                //{
+                //    nep.resend = true;
+                //    nep.Send(msg);
+                //}
             }
         }
     }

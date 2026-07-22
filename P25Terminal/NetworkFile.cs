@@ -19,17 +19,21 @@ namespace P25Terminal
         public string fileName = "";
         public long fileSize = 0;
         public int fileParts = 0;
+        public int chunkSize = 0;
+        public int chunkWait = 0;
 
         public byte[] GetBytes()
         {
             byte[] nameBytes = Encoding.ASCII.GetBytes(fileName);
             fileNameSize = nameBytes.Length;
 
-            byte[] data = new byte[4 + fileNameSize + 8 + 4];
+            byte[] data = new byte[4 + fileNameSize + 8 + 4 + 4 + 4];
             Array.Copy(BitConverter.GetBytes(fileNameSize), 0, data, 0, 4);
             Array.Copy(nameBytes, 0, data, 4, fileNameSize);
             Array.Copy(BitConverter.GetBytes(fileSize), 0, data, 4 + fileNameSize, 8);
             Array.Copy(BitConverter.GetBytes(fileParts), 0, data, 4 + 8 + fileNameSize, 4);
+            Array.Copy(BitConverter.GetBytes(chunkSize), 0, data, 4 + 8 + fileNameSize + 4, 4);
+            Array.Copy(BitConverter.GetBytes(chunkWait), 0, data, 4 + 8 + fileNameSize + 4 + 4, 4);
 
 
             return data;
@@ -42,6 +46,8 @@ namespace P25Terminal
             fi.fileName = Encoding.ASCII.GetString(bytes, 4, fi.fileNameSize);
             fi.fileSize = BitConverter.ToInt64(bytes, fi.fileNameSize + 4);
             fi.fileParts = BitConverter.ToInt32(bytes, fi.fileNameSize + 4 + 8);
+            fi.chunkSize = BitConverter.ToInt32(bytes, fi.fileNameSize + 4 + 8 + 4);
+            fi.chunkWait = BitConverter.ToInt32(bytes, fi.fileNameSize + 4 + 8 + 4 + 4);
 
             return fi;
         }
